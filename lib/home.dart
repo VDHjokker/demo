@@ -1,12 +1,9 @@
-import 'package:encryptor/encryptor.dart';
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:url_launcher/url_launcher_string.dart';
 
-
 class HomePage extends StatelessWidget {
-
- Future<void> _launchInBrowser(Uri url) async {
+  Future<void> _launchInBrowser(Uri url) async {
     if (!await launchUrl(
       url,
       mode: LaunchMode.externalApplication,
@@ -66,9 +63,10 @@ class HomePage extends StatelessWidget {
       return const Text('');
     }
   }
+
   final String lat = "37.3230";
   final String lng = "-122.0312";
-  
+
   Future<void> _makePhoneCall(String phoneNumber) async {
     final Uri launchUri = Uri(
       scheme: 'tel',
@@ -76,7 +74,6 @@ class HomePage extends StatelessWidget {
     );
     await launchUrl(launchUri);
   }
-  
 
 // comgooglemaps://?center=$lat,$lng"
   @override
@@ -90,26 +87,28 @@ class HomePage extends StatelessWidget {
           ListTile(
             title: Text("Launch Web Page"),
             onTap: () async {
+              var plainText = 'SOME DATA TO ENCRYPT';
+              var key = 'Key to encrypt and decrpyt the plain text';
 
-            var plainText = 'SOME DATA TO ENCRYPT';
-            var key = 'Key to encrypt and decrpyt the plain text';
+              // var encrypted = Encryptor.encrypt(key, plainText);
+              // var decrypted = Encryptor.decrypt(key, encrypted);
 
-            var encrypted = Encryptor.encrypt(key, plainText);
-            var decrypted = Encryptor.decrypt(key, encrypted);
+              // print("encrypted data:   ---- " + encrypted);
+              // print("decrypted data:   ---- " + decrypted);
 
-            print("encrypted data:   ---- " + encrypted);
-            print("decrypted data:   ---- " + decrypted);
+              final Uri uri = Uri(
+                  scheme: "https",
+                  host: "phantom.app",
+                  path: "/ul/v1/connect",
+                  queryParameters: {
+                    "app_url": "https://nagakingdom.com/",
+                    "redirect_link": "localhost://dapp/onPhantomConnected",
+                    // "dapp_encryption_public_key": encrypted,
+                    "cluster": "devnet"
+                  });
 
-                final Uri uri = Uri(scheme: "https", host: "phantom.app", path: "/ul/v1/connect", 
-                queryParameters: {
-                  "app_url": "https://nagakingdom.com/",
-                  "redirect_link": "localhost://dapp/onPhantomConnected",
-                  "dapp_encryption_public_key": encrypted,
-                  "cluster": "devnet"
-                });
-               
-                _launchUniversalLinkIos(uri);
-            //  _launchInBrowser(toLaunch);
+              _launchUniversalLinkIos(uri);
+              //  _launchInBrowser(toLaunch);
 
               // if (await canLaunchUrl(url)) {
               //   await launch(url, forceSafariVC: false);

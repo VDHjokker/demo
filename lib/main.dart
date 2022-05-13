@@ -1,282 +1,266 @@
+// Copyright 2013 The Flutter Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style license that can be
+// found in the LICENSE file.
+
+// ignore_for_file: public_member_api_docs
+
 import 'dart:async';
-import 'dart:io';
 
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
-import 'package:uni_links/uni_links.dart';
+import 'package:url_launcher/link.dart';
+import 'package:url_launcher/url_launcher.dart';
+import 'package:cryptography/cryptography.dart';
 
-bool _initialUriIsHandled = false;
-
-void main() => runApp(MaterialApp(home: MyApp()));
-
-class MyApp extends StatefulWidget {
-  @override
-  _MyAppState createState() => _MyAppState();
+void main() {
+  runApp(const MyApp());
 }
 
-class _MyAppState extends State<MyApp> with SingleTickerProviderStateMixin {
+class MyApp extends StatelessWidget {
+  const MyApp({Key? key}) : super(key: key);
 
-  Uri? _initialUri;
-  Uri? _latestUri;
-  Object? _err;
+  @override
+  Widget build(BuildContext context) {
+    return MaterialApp(
+      title: 'URL Launcher',
+      theme: ThemeData(
+        primarySwatch: Colors.blue,
+      ),
+      home: const MyHomePage(title: 'URL Launcher'),
+    );
+  }
+}
 
-  StreamSubscription? _sub;
+class MyHomePage extends StatefulWidget {
+  const MyHomePage({Key? key, required this.title}) : super(key: key);
+  final String title;
 
-  final _scaffoldKey = GlobalKey();
-  final _cmds = getCmds();
-  final _cmdStyle = const TextStyle(
-      fontFamily: 'Courier', fontSize: 12.0, fontWeight: FontWeight.w700);
+  @override
+  State<MyHomePage> createState() => _MyHomePageState();
+}
+
+class _MyHomePageState extends State<MyHomePage> {
+  bool _hasCallSupport = false;
+  Future<void>? _launched;
+  String _phone = '';
 
   @override
   void initState() {
     super.initState();
-    // _handleIncomingLinks();
-    _handleInitialUri();
-  }
-
-  @override
-  void dispose() {
-    _sub?.cancel();
-    super.dispose();
-  }
-
-  /// Handle incoming links - the ones that the app will recieve from the OS
-  /// while already started.
-  void _handleIncomingLinks() {
-    if (!kIsWeb) {
-      // It will handle app links while the app is already started - be it in
-      // the foreground or in the background.
-      _sub = uriLinkStream.listen((Uri? uri) {
-        if (!mounted) return;
-        print('got uri: $uri');
-        setState(() {
-          _latestUri = uri;
-          _err = null;
-        });
-      }, onError: (Object err) {
-        if (!mounted) return;
-        print('got err: $err');
-        setState(() {
-          _latestUri = null;
-          if (err is FormatException) {
-            _err = err;
-          } else {
-            _err = null;
-          }
-        });
+    loadingkeypair();
+    // Check for phone call support.
+    canLaunchUrl(Uri(scheme: 'tel', path: '123')).then((bool result) {
+      setState(() {
+        _hasCallSupport = result;
       });
+    });
+  }
+
+  Future loadingkeypair() async {
+    final algorithm = X25519();
+
+    // Alice chooses her key pair
+    final aliceKeyPair = await algorithm.newKeyPair();
+
+    // Alice knows Bob's public key
+    final bobKeyPair = await algorithm.newKeyPair();
+    localKeyPair = await bobKeyPair.extractPublicKey();
+
+    // Alice calculates the shared secret.
+    final sharedSecret = await algorithm.sharedSecretKey(
+      keyPair: aliceKeyPair,
+      remotePublicKey: localKeyPair,
+    );
+    // localKeyPair = await X25519().newKeyPair();
+    // localKeyPair.
+    // print(localKeyPair);
+  }
+
+  Future<void> _launchInBrowser(Uri url) async {
+    if (!await launchUrl(
+      url,
+      mode: LaunchMode.externalApplication,
+    )) {
+      throw 'Could not launch $url';
     }
   }
 
-  /// Handle the initial Uri - the one the app was started with
-  ///
-  /// **ATTENTION**: `getInitialLink`/`getInitialUri` should be handled
-  /// ONLY ONCE in your app's lifetime, since it is not meant to change
-  /// throughout your app's life.
-  ///
-  /// We handle all exceptions, since it is called from initState.
-  Future<void> _handleInitialUri() async {
-    // In this example app this is an almost useless guard, but it is here to
-    // show we are not going to call getInitialUri multiple times, even if this
-    // was a weidget that will be disposed of (ex. a navigation route change).
-    if (!_initialUriIsHandled) {
-      _initialUriIsHandled = true;
-      _showSnackBar('_handleInitialUri called');
-      try {
-        final uri = await getInitialUri();
-        if (uri == null) {
-          print('no initial uri');
-        } else {
-          print('got initial uri: $uri');
-        }
-        if (!mounted) return;
-        setState(() => _initialUri = uri);
-      } on PlatformException {
-        // Platform messages may fail but we ignore the exception
-        print('falied to get initial uri');
-      } on FormatException catch (err) {
-        if (!mounted) return;
-        print('malformed initial uri');
-        setState(() => _err = err);
-      }
+  Future<void> _launchInWebViewOrVC(Uri url) async {
+    if (!await launchUrl(
+      url,
+      mode: LaunchMode.inAppWebView,
+      webViewConfiguration: const WebViewConfiguration(
+          headers: <String, String>{'my_header_key': 'my_header_value'}),
+    )) {
+      throw 'Could not launch $url';
     }
   }
+
+  Future<void> _launchInWebViewWithoutJavaScript(Uri url) async {
+    if (!await launchUrl(
+      url,
+      mode: LaunchMode.inAppWebView,
+      webViewConfiguration: const WebViewConfiguration(enableJavaScript: false),
+    )) {
+      throw 'Could not launch $url';
+    }
+  }
+
+  Future<void> _launchInWebViewWithoutDomStorage(Uri url) async {
+    if (!await launchUrl(
+      url,
+      mode: LaunchMode.inAppWebView,
+      webViewConfiguration: const WebViewConfiguration(enableDomStorage: false),
+    )) {
+      throw 'Could not launch $url';
+    }
+  }
+
+  Future<void> _launchUniversalLinkIos(Uri url) async {
+    // var decrypted = Encryptor.decrypt(key, encrypted);
+
+    final bool nativeAppLaunchSucceeded = await launchUrl(
+      url,
+      mode: LaunchMode.externalNonBrowserApplication,
+    );
+    if (!nativeAppLaunchSucceeded) {
+      await launchUrl(
+        url,
+        mode: LaunchMode.inAppWebView,
+      );
+    }
+  }
+
+  Widget _launchStatus(BuildContext context, AsyncSnapshot<void> snapshot) {
+    if (snapshot.hasError) {
+      return Text('Error: ${snapshot.error}');
+    } else {
+      return const Text('');
+    }
+  }
+
+  Future<void> _makePhoneCall(String phoneNumber) async {
+    final Uri launchUri = Uri(
+      scheme: 'tel',
+      path: phoneNumber,
+    );
+    await launchUrl(launchUri);
+  }
+
+  var localKeyPair;
 
   @override
   Widget build(BuildContext context) {
-    final queryParams = _latestUri?.queryParametersAll.entries.toList();
+    var plainText = 'SOME DATA TO ENCRYPT';
+    var key = 'Key to encrypt and decrpyt the plain text';
 
+    // var encrypted = Encryptor.encrypt(key, plainText);
+
+    // onPressed calls using this URL are not gated on a 'canLaunch' check
+    // because the assumption is that every device can launch a web URL.
+    final Uri toLaunch = Uri(
+        scheme: 'https',
+        host: 'phantom.app',
+        path: 'ul/v1/connect',
+        queryParameters: {
+          "app_url": "https://dev.nagakingdom.com",
+          "dapp_encryption_public_key": localKeyPair.toString(),
+          "redirect_link": "poc://deeplink.flutter.dev",
+          "cluster": "devnet"
+        });
+    // final Uri toLaunch = Uri(scheme: 'poc', host: 'deeplink.flutter.dev');
     return Scaffold(
-      key: _scaffoldKey,
       appBar: AppBar(
-        title: const Text('uni_links example app'),
+        title: Text(widget.title),
       ),
       body: ListView(
-        shrinkWrap: true,
-        padding: const EdgeInsets.all(8.0),
-        children: [
-          if (_err != null)
-            ListTile(
-              title: const Text('Error', style: TextStyle(color: Colors.red)),
-              subtitle: Text('$_err'),
-            ),
-          ListTile(
-            title: const Text('Initial Uri'),
-            subtitle: Text('$_initialUri'),
-          ),
-          if (!kIsWeb) ...[
-            ListTile(
-              title: const Text('Latest Uri'),
-              subtitle: Text('$_latestUri'),
-            ),
-            ListTile(
-              title: const Text('Latest Uri (path)'),
-              subtitle: Text('${_latestUri?.path}'),
-            ),
-            ExpansionTile(
-              initiallyExpanded: true,
-              title: const Text('Latest Uri (query parameters)'),
-              children: queryParams == null
-                  ? const [ListTile(dense: true, title: Text('null'))]
-                  : [
-                      for (final item in queryParams)
-                        ListTile(
-                          title: Text(item.key),
-                          trailing: Text(item.value.join(', ')),
-                        )
-                    ],
-            ),
-          ],
-          _cmdsCard(_cmds),
-          const Divider(),
-          if (!kIsWeb)
-            ListTile(
-              leading: const Icon(Icons.error, color: Colors.red),
-              title: const Text(
-                'Force quit this example app',
-                style: TextStyle(color: Colors.red),
+        children: <Widget>[
+          Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: <Widget>[
+              Padding(
+                padding: const EdgeInsets.all(16.0),
+                child: TextField(
+                    onChanged: (String text) => _phone = text,
+                    decoration: const InputDecoration(
+                        hintText: 'Input the phone number to launch')),
               ),
-              onTap: () {
-                // WARNING: DO NOT USE this in production !!!
-                //          Your app will (most probably) be rejected !!!
-                if (Platform.isIOS) {
-                  exit(0);
-                } else {
-                  SystemNavigator.pop();
-                }
-              },
-            ),
+              ElevatedButton(
+                onPressed: _hasCallSupport
+                    ? () => setState(() {
+                          _launched = _makePhoneCall(_phone);
+                        })
+                    : null,
+                child: _hasCallSupport
+                    ? const Text('Make phone call')
+                    : const Text('Calling not supported'),
+              ),
+              Padding(
+                padding: const EdgeInsets.all(16.0),
+                child: Text(toLaunch.toString()),
+              ),
+              ElevatedButton(
+                onPressed: () => setState(() {
+                  _launched = _launchInBrowser(toLaunch);
+                }),
+                child: const Text('Launch in browser'),
+              ),
+              const Padding(padding: EdgeInsets.all(16.0)),
+              ElevatedButton(
+                onPressed: () => setState(() {
+                  _launched = _launchInWebViewOrVC(toLaunch);
+                }),
+                child: const Text('Launch in app'),
+              ),
+              ElevatedButton(
+                onPressed: () => setState(() {
+                  _launched = _launchInWebViewWithoutJavaScript(toLaunch);
+                }),
+                child: const Text('Launch in app (JavaScript OFF)'),
+              ),
+              ElevatedButton(
+                onPressed: () => setState(() {
+                  _launched = _launchInWebViewWithoutDomStorage(toLaunch);
+                }),
+                child: const Text('Launch in app (DOM storage OFF)'),
+              ),
+              const Padding(padding: EdgeInsets.all(16.0)),
+              ElevatedButton(
+                onPressed: () => setState(() {
+                  _launched = _launchUniversalLinkIos(toLaunch);
+                }),
+                child: const Text(
+                    'Launch a universal link in a native app, fallback to Safari.(Youtube)'),
+              ),
+              const Padding(padding: EdgeInsets.all(16.0)),
+              ElevatedButton(
+                onPressed: () => setState(() {
+                  _launched = _launchInWebViewOrVC(toLaunch);
+                  Timer(const Duration(seconds: 5), () {
+                    print('Closing WebView after 5 seconds...');
+                    closeInAppWebView();
+                  });
+                }),
+                child: const Text('Launch in app + close after 5 seconds'),
+              ),
+              const Padding(padding: EdgeInsets.all(16.0)),
+              Link(
+                uri: Uri.parse(
+                    'https://pub.dev/documentation/url_launcher/latest/link/link-library.html'),
+                target: LinkTarget.blank,
+                builder: (BuildContext ctx, FollowLink? openLink) {
+                  return TextButton.icon(
+                    onPressed: openLink,
+                    label: const Text('Link Widget documentation'),
+                    icon: const Icon(Icons.read_more),
+                  );
+                },
+              ),
+              const Padding(padding: EdgeInsets.all(16.0)),
+              FutureBuilder<void>(future: _launched, builder: _launchStatus),
+            ],
+          ),
         ],
       ),
     );
   }
-
-  Widget _cmdsCard(List<String>? commands) {
-    Widget platformCmds;
-
-    if (commands == null) {
-      platformCmds = const Center(child: Text('Unsupported platform'));
-    } else {
-      platformCmds = Column(
-        children: [
-          const [
-            if (kIsWeb)
-              Text('Append this path to the Web app\'s URL, replacing `#/`:\n')
-            else
-              Text('To populate above fields open a terminal shell and run:\n'),
-          ],
-          intersperse(
-              commands.map<Widget>((cmd) => InkWell(
-                    onTap: () => _printAndCopy(cmd),
-                    child: Text('\n$cmd\n', style: _cmdStyle),
-                  )),
-              const Text('or')),
-          [
-            Text(
-              '(tap on any of the above commands to print it to'
-              ' the console/logger and copy to the device clipboard.)',
-              textAlign: TextAlign.center,
-              style: Theme.of(context).textTheme.caption,
-            ),
-          ]
-        ].expand((el) => el).toList(),
-      );
-    }
-
-    return Card(
-      margin: const EdgeInsets.only(top: 20.0),
-      child: Padding(
-        padding: const EdgeInsets.all(10.0),
-        child: platformCmds,
-      ),
-    );
-  }
-
-  Future<void> _printAndCopy(String cmd) async {
-    print(cmd);
-
-    await Clipboard.setData(ClipboardData(text: cmd));
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Copied to Clipboard')),
-    );
-  }
-
-  void _showSnackBar(String msg) {
-    WidgetsBinding.instance?.addPostFrameCallback((_) {
-      final context = _scaffoldKey.currentContext;
-      if (context != null) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: Text(msg),
-        ));
-      }
-    });
-  }
-}
-
-List<String>? getCmds() {
-  late final String cmd;
-  var cmdSuffix = '';
-
-  const plainPath = 'path/subpath';
-  const args = 'path/portion/?uid=123&token=abc';
-  const emojiArgs =
-      '?arr%5b%5d=123&arr%5b%5d=abc&addr=1%20Nowhere%20Rd&addr=Rand%20City%F0%9F%98%82';
-
-  if (kIsWeb) {
-    return [
-      plainPath,
-      args,
-      emojiArgs,
-      // Cannot create malformed url, since the browser will ensure it is valid
-    ];
-  }
-
-  if (Platform.isIOS) {
-    cmd = '/usr/bin/xcrun simctl openurl booted';
-  } else if (Platform.isAndroid) {
-    cmd = '\$ANDROID_HOME/platform-tools/adb shell \'am start'
-        ' -a android.intent.action.VIEW'
-        ' -c android.intent.category.BROWSABLE -d';
-    cmdSuffix = "";
-  } else {
-    return null;
-  }
-
-  // https://orchid-forgery.glitch.me/mobile/redirect/
-  return [
-    '$cmd "unilinks://host/$plainPath"$cmdSuffix',
-    '$cmd "unilinks://example.com/$args"$cmdSuffix',
-    '$cmd "unilinks://example.com/$emojiArgs"$cmdSuffix',
-    '$cmd "unilinks://@@malformed.invalid.url/path?"$cmdSuffix',
-  ];
-}
-
-List<Widget> intersperse(Iterable<Widget> list, Widget item) {
-  final initialValue = <Widget>[];
-  return list.fold(initialValue, (all, el) {
-    if (all.isNotEmpty) all.add(item);
-    all.add(el);
-    return all;
-  });
 }
